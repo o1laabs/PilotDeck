@@ -289,6 +289,9 @@ export class AgentLoop {
     let hasAttemptedReasoningContentRetry = false;
     /** Prevent a provider that keeps rejecting text-only retries from looping forever. */
     let hasAttemptedImageStrip = false;
+    /** Cap head-truncation retries so a persistent context overflow fails instead of looping forever. */
+    const MAX_TRUNCATE_HEAD_RECOVERIES = 2;
+    let truncateHeadRecoveryCount = 0;
     const MAX_STREAM_INTERRUPTION_RECOVERIES = 2;
     let streamInterruptionRecoveryCount = 0;
     const MAX_UNKNOWN_FINISH_RECOVERIES = 2;
@@ -1344,7 +1347,12 @@ export class AgentLoop {
           continue;
         }
 
-        if (reactive && reactive.type === "truncate_head_and_retry") {
+        if (
+          reactive
+          && reactive.type === "truncate_head_and_retry"
+          && truncateHeadRecoveryCount < MAX_TRUNCATE_HEAD_RECOVERIES
+        ) {
+          truncateHeadRecoveryCount++;
           // Drop the failed assistant message + any synthetic tool_result we just
           // pushed so the retry doesn't carry a half-baked tool_call. Then apply
           // keepRatio so the cap is computed against valid history only.
@@ -1968,6 +1976,7 @@ export class AgentLoop {
         hasAttemptedEmptyRetry = false;
         hasAttemptedToolCallRetry = false;
         hasAttemptedImageStrip = false;
+        truncateHeadRecoveryCount = 0;
       }
 
       if (this.config.stopOnStructuredOutput && structuredOutput !== undefined) {
